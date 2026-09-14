@@ -1248,6 +1248,57 @@
             });
           }
         });
+        
+        document.addEventListener('DOMContentLoaded', () => {
+          const subLinks = document.querySelectorAll('a[href*="install-config"], a[href*="subscription"]');
+          
+          subLinks.forEach(link => {
+            let pressTimer;
+            let isLongPress = false;
+            
+            const href = link.getAttribute('href');
+            let rawSubUrl = href;
+            
+            if (href.includes('url=')) {
+              const urlParam = href.match(/[?&]url=([^&]+)/);
+              if (urlParam) {
+                rawSubUrl = decodeURIComponent(urlParam[1]);
+              }
+            }
+            
+            link.setAttribute('data-raw-url', rawSubUrl);
+            
+            link.addEventListener('touchstart', (e) => {
+              isLongPress = false;
+              pressTimer = setTimeout(() => {
+                isLongPress = true;
+                navigator.clipboard.writeText(rawSubUrl).then(() => {
+                  // Toast or feedback
+                  const toast = document.createElement('div');
+                  toast.textContent = 'Subscription URL copied!';
+                  toast.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:5px;z-index:9999;';
+                  document.body.appendChild(toast);
+                  setTimeout(() => toast.remove(), 2000);
+                }).catch(err => console.error('Copy failed:', err));
+              }, 300); // 300ms for long press
+            });
+            
+            link.addEventListener('touchend', (e) => {
+              clearTimeout(pressTimer);
+              if (isLongPress) {
+                e.preventDefault();
+              }
+            });
+            
+            link.addEventListener('touchmove', () => {
+              clearTimeout(pressTimer);
+            });
+            
+            link.addEventListener('contextmenu', (e) => {
+              navigator.clipboard.writeText(rawSubUrl).catch(err => console.error('Copy failed:', err));
+            });
+          });
+        });
       </script>
   </body>
 </html>
