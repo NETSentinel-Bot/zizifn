@@ -721,8 +721,8 @@
 
       <div class="config-card">
         <div class="config-title">
-          <span>Sing-Box Core Clients</span>
-          <button class="icon-btn" aria-label="Copy configuration" title="Copy configuration" onclick="copyToClipboard(this, '{{CONFIG_FREEDOM}}')">
+          <span>PattNG (Enhanced Xray)</span>
+          <button id="copy-pattng-btn" class="icon-btn" aria-label="Copy configuration" title="Copy configuration">
             <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -730,9 +730,10 @@
           </button>
         </div>
         <div class="config-content">
-          <pre id="singbox-config">{{CONFIG_FREEDOM}}</pre>
+          <pre id="pattng-config">{{CONFIG_PATTNG}}</pre>
         </div>
-        <div class="client-buttons">
+        <span id="open-fragment-settings" class="custom-routing-trigger" role="button" tabindex="0">⚙ Customize Fragment</span>
+        <div class="client-buttons" style="margin-top: 10px;">
           <a href="{{URL_CLASH}}" id="clash-import-btn" class="button client-btn" data-copy-url="{{URL_CLASH}}" aria-label="Import to Clash Meta, long press to copy link">
             <span class="client-icon"><svg viewBox="0 0 24 24">
                 <circle cx="12" cy="12" r="9" />
@@ -747,6 +748,18 @@
               </svg></span>
             <span class="button-text">Import to Exclave</span>
           </a>
+        </div>
+      </div>
+
+      <div class="config-card">
+        <div class="config-title">
+          <span>Node Speed Test</span>
+          <button id="run-speed-test" class="refresh-btn" aria-label="Run node speed test" title="Run node speed test">
+            Run Test
+          </button>
+        </div>
+        <div id="speed-test-results" class="config-content" style="display: none;">
+          <pre id="speed-test-output"></pre>
         </div>
       </div>
 
@@ -800,6 +813,19 @@
             <button id="custom-ips-save" class="button client-btn">Save & Generate</button>
             <button id="custom-ips-cancel" class="button client-btn modal-btn-secondary">Cancel</button>
           </div>
+        </div>
+      </div>
+
+      <div id="fragment-modal" class="modal-overlay" style="display: none" role="dialog" aria-modal="true" aria-labelledby="fragment-modal-title">
+        <div class="modal-content">
+          <h3 id="fragment-modal-title" class="modal-title">Customize Fragment</h3>
+          <p class="modal-text">Edit the fragment settings JSON. Invalid JSON will not be saved.</p>
+          <textarea id="fragment-input" class="modal-textarea" style="min-height: 180px" aria-label="Fragment settings JSON"></textarea>
+          <div class="modal-btn-group">
+            <button id="fragment-save" class="button client-btn">Save & Apply</button>
+            <button id="fragment-cancel" class="button client-btn modal-btn-secondary">Cancel</button>
+          </div>
+          <button id="fragment-reset" class="button client-btn modal-btn-secondary" style="width: 100%; margin-top: 8px;">Reset to Default</button>
         </div>
       </div>
 
@@ -985,7 +1011,7 @@
           if (!card || !pre) return;
           const lines = savedIps.split('\n').map(line => line.trim()).filter(line => line !== "");
           const xrayBase = document.getElementById("xray-config")?.textContent || "";
-          const sbBase = document.getElementById("singbox-config")?.textContent || "";
+          const sbBase = document.getElementById("pattng-config")?.textContent || "";
           let customConfigs = [];
           lines.forEach((ip, index) => {
             let host = ip;
@@ -1017,6 +1043,80 @@
             };
           } else {
             card.style.display = 'none';
+          }
+        }
+
+        function extractParam(link, key) {
+          const match = link.match(/\?([^#]*)/);
+          if (!match) return null;
+          return new URLSearchParams(match[1]).get(key);
+        }
+        
+        function rebuildFragmentLink(baseLink, fmValue) {
+          const match = baseLink.match(/^(vless:\/\/[^?#]+)(\?[^#]*)?(#.*)?$/);
+          if (!match) throw new Error("Could not parse link");
+          const [, prefix, query = "", hash = ""] = match;
+          const params = new URLSearchParams(query.slice(1));
+          params.set("fm", fmValue);
+          return `${prefix}?${params.toString()}${hash}`;
+        }
+        
+        function parseVlessLine(line) {
+          const match = line.match(/^vless:\/\/[^@]+@(\[[^\]]+\]|[^:?#]+):(\d+)[^#]*#(.+)$/);
+          if (!match) return null;
+          return { host: match[1], port: match[2], name: decodeURIComponent(match[3]) };
+        }
+        
+        async function timeRequest(host, port, timeoutMs = 4000) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          const started = performance.now();
+          try {
+            await fetch(`https://${host}:${port}/`, { mode: "no-cors", cache: "no-store", signal: controller.signal });
+            return performance.now() - started;
+          } catch (e) {
+            return null;
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        
+        async function runSpeedTest() {
+          const button = document.getElementById("run-speed-test");
+          const resultsBox = document.getElementById("speed-test-results");
+          const output = document.getElementById("speed-test-output");
+          if (!button || !output) return;
+          button.disabled = true;
+          button.textContent = "Testing...";
+          output.textContent = "";
+          resultsBox.style.display = "block";
+          try {
+            const uuid = location.pathname.split("/").filter(Boolean)[0];
+            const res = await fetch(`/xray/${uuid}`);
+            if (!res.ok) throw new Error("subscription fetch failed");
+            const decoded = atob(await res.text());
+            const nodes = decoded.split("\n").map(parseVlessLine).filter(Boolean);
+            const results = [];
+            const concurrency = 5;
+            let index = 0;
+            async function worker() {
+              while (index < nodes.length) {
+                const node = nodes[index++];
+                const ms = await timeRequest(node.host, node.port);
+                results.push({ ...node, ms });
+              }
+            }
+            await Promise.all(Array.from({ length: concurrency }, worker));
+            const sorted = results.filter((r) => r.ms !== null).sort((a, b) => a.ms - b.ms);
+            const failed = results.filter((r) => r.ms === null);
+            const lines = sorted.slice(0, 10).map((r, i) => `${i + 1}. ${r.name} — ${Math.round(r.ms)}ms`);
+            if (failed.length) lines.push(`${failed.length} node(s) failed or timed out`);
+            output.textContent = lines.join("\n") || "No results";
+          } catch (e) {
+            output.textContent = "Test failed: " + e.message;
+          } finally {
+            button.disabled = false;
+            button.textContent = "Run Test";
           }
         }
 
@@ -1166,6 +1266,63 @@
             el.classList.add(ok ? "copied" : "error");
             setTimeout(() => el.classList.remove(ok ? "copied" : "error"), 1200);
           };
+          document.getElementById("copy-pattng-btn")?.addEventListener("click", function() {
+            copyToClipboard(this, document.getElementById("pattng-config").textContent);
+          });
+          
+          document.getElementById("run-speed-test")?.addEventListener("click", runSpeedTest);
+          
+          const fragmentTrigger = document.getElementById("open-fragment-settings");
+          const fragmentModal = document.getElementById("fragment-modal");
+          const fragmentInput = document.getElementById("fragment-input");
+          const fragmentSave = document.getElementById("fragment-save");
+          const fragmentReset = document.getElementById("fragment-reset");
+          const fragmentCancel = document.getElementById("fragment-cancel");
+          const pattngPre = document.getElementById("pattng-config");
+          
+          const savedFm = localStorage.getItem("custom_fragment_mask");
+          if (savedFm && pattngPre) {
+            pattngPre.textContent = rebuildFragmentLink(pattngPre.textContent, savedFm);
+          }
+          
+          if (fragmentTrigger && fragmentModal && pattngPre) {
+            const closeFragmentModal = () => {
+              fragmentModal.classList.remove("visible");
+              setTimeout(() => (fragmentModal.style.display = "none"), 300);
+            };
+            fragmentTrigger.addEventListener("click", () => {
+              const current = localStorage.getItem("custom_fragment_mask") || extractParam(pattngPre.textContent, "fm");
+              try {
+                fragmentInput.value = JSON.stringify(JSON.parse(current), null, 2);
+              } catch (e) {
+                fragmentInput.value = current || "";
+              }
+              fragmentModal.style.display = "flex";
+              setTimeout(() => fragmentModal.classList.add("visible"), 10);
+            });
+            fragmentCancel?.addEventListener("click", closeFragmentModal);
+            fragmentModal.addEventListener("click", (e) => {
+              if (e.target === fragmentModal) closeFragmentModal();
+            });
+            fragmentSave?.addEventListener("click", () => {
+              let parsed;
+              try {
+                parsed = JSON.parse(fragmentInput.value);
+              } catch (e) {
+                fragmentInput.style.borderColor = "var(--fgColor-danger)";
+                return;
+              }
+              fragmentInput.style.borderColor = "";
+              const fmValue = JSON.stringify(parsed);
+              localStorage.setItem("custom_fragment_mask", fmValue);
+              pattngPre.textContent = rebuildFragmentLink(pattngPre.textContent, fmValue);
+              closeFragmentModal();
+            });
+            fragmentReset?.addEventListener("click", () => {
+              localStorage.removeItem("custom_fragment_mask");
+              location.reload();
+            });
+          }
           document.querySelectorAll(".client-btn[data-copy-url]").forEach((el) => {
             attachLongPress(el, {
               onTap: (e) => {
