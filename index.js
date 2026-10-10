@@ -90,7 +90,12 @@ export default {
       const upgradeHeader = request.headers.get("Upgrade");
 
       if (upgradeHeader && upgradeHeader.toLowerCase() === "websocket") {
-        await ensureWasm();
+        try {
+          await ensureWasm();
+        } catch (wasmErr) {
+          console.error("WASM module initialization failed:", wasmErr);
+          return new Response(`WASM Error: ${wasmErr.message || wasmErr}`, { status: 500 });
+        }
         return await ProtocolOverWSHandler(request, {
           userID: cfg.userID,
           proxyPool: cfg.proxyPool,

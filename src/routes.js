@@ -22,9 +22,18 @@ import panelB64 from "./panel.b64";
 let panelHtml = null;
 function getPanelHtml() {
   if (!panelHtml) {
-    panelHtml = new TextDecoder("utf-8").decode(
-      Uint8Array.from(atob(panelB64), (c) => c.charCodeAt(0)),
-    );
+    try {
+      if (typeof panelB64 === "string" && panelB64.length > 0) {
+        panelHtml = new TextDecoder("utf-8").decode(
+          Uint8Array.from(atob(panelB64), (c) => c.charCodeAt(0)),
+        );
+      } else {
+        throw new Error("panelB64 is empty or invalid");
+      }
+    } catch (e) {
+      console.error("Failed to decode panelB64, using fallback panel HTML:", e);
+      panelHtml = `<!DOCTYPE html><html><head><title>VLESS Proxy Panel</title></head><body><h1>VLESS Worker Config</h1><p>Dream Config: {{CONFIG_DREAM}}</p></body></html>`;
+    }
   }
   return panelHtml;
 }
