@@ -15,10 +15,17 @@ import {
 let wasmReady = null;
 function ensureWasm() {
   if (!wasmReady) {
-    wasmReady = init({ module_or_path: wasm }).catch((e) => {
-     wasmReady = null;
-     throw e;
-   });
+    try {
+      wasmReady = init({ module_or_path: wasm }).catch((e) => {
+        wasmReady = null;
+        console.error("Async WASM initialization failed:", e);
+        throw e;
+      });
+    } catch (e) {
+      wasmReady = null;
+      console.error("Sync WASM init call threw error:", e);
+      throw e;
+    }
   }
   return wasmReady;
 }
