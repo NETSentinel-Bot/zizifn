@@ -12,7 +12,7 @@ fallthrough = false
 
 [[rules]]
 type = "Text"
-globs = ["**/*.b64"]
+globs = ["**/*.html", "**/*.b64"]
 fallthrough = true
 
 [observability]
